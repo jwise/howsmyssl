@@ -29,6 +29,7 @@ type ServerHandshakeState struct {
 	masterSecret    []byte
 	certsFromClient [][]byte
 	cert            *Certificate
+	detectRecordSplitting bool
 }
 
 // serverHandshake performs a TLS handshake as a server.
@@ -183,18 +184,30 @@ Curves:
 		return true, nil
 	}
 
-	var preferenceList, supportedList []uint16
-	if c.config.PreferServerCipherSuites {
-		preferenceList = c.config.cipherSuites()
-		supportedList = hs.ClientHello.CipherSuites
-	} else {
-		preferenceList = hs.ClientHello.CipherSuites
-		supportedList = c.config.cipherSuites()
+	if c.vers == VersionTLS10 {
+		for _, cs := range hs.ClientHello.CipherSuites {
+			if cs == 0x002F {
+				hs.suite = c.tryCipherSuite(cs, c.config.cipherSuites(), c.vers, hs.ellipticOk, hs.ecdsaOk)
+				if hs.suite != nil {
+					hs.detectRecordSplitting = true
+				}
+			}
+		}
 	}
+	if hs.suite == nil {
+		var preferenceList, supportedList []uint16
+		if c.config.PreferServerCipherSuites {
+			preferenceList = c.config.cipherSuites()
+			supportedList = hs.ClientHello.CipherSuites
+		} else {
+			preferenceList = hs.ClientHello.CipherSuites
+			supportedList = c.config.cipherSuites()
+		}
 
-	for _, id := range preferenceList {
-		if hs.suite = c.tryCipherSuite(id, supportedList, c.vers, hs.ellipticOk, hs.ecdsaOk); hs.suite != nil {
-			break
+		for _, id := range preferenceList {
+			if hs.suite = c.tryCipherSuite(id, supportedList, c.vers, hs.ellipticOk, hs.ecdsaOk); hs.suite != nil {
+				break
+			}
 		}
 	}
 
